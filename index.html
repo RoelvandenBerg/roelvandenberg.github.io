@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0' />
+  <title>big</title>
+  <link href='big.css' rel='stylesheet' type='text/css' />
+  <link href='highlight.css' rel='stylesheet' type='text/css' />
+  <style>
+    .new-shiny { background: #aaaaaa; }
+  </style>
+  <script src='big.js'></script>
+  <script src='highlight.js'></script>
+  <script>hljs.initHighlightingOnLoad();</script>
+</head>
+<body class='light'>
+  <div><h1 id="-eventseries-"><em>Eventseries</em></h1>
+</div>
+<div><h2 id="-wat-"><em>Wat?</em></h2>
+</div>
+<div><p>Een reeks van <em>events</em>.</p>
+</div>
+<div><ol>
+<li>Een tijdsaanduiding: <em>start</em> en een <em>eind</em>.</li>
+<li>Punt <em>geometerie</em> en/of gekoppeld aan een <em>asset</em>.</li>
+<li>Een <em>waarde</em> (tekst int of float).</li>
+<li>Overige <em>metadata</em> (waaronder de duur).</li>
+</ol>
+</div>
+<div><h2 id="-wat-voor-data-"><em>Wat voor data?</em></h2>
+</div>
+<div><h1 id="regulier">Regulier</h1>
+</div>
+<div><ul>
+<li>Storingen op objecten</li>
+<li>Afwijkingen van waterstanden tov streefpeilen</li>
+<li>twitter melding </li>
+<li>aardbevingen</li>
+</ul>
+</div>
+<div><h1 id="koppeling-aan-assets">Koppeling aan assets</h1>
+</div>
+<div><ul>
+<li>hoogwater moment tpv asset</li>
+<li>overstorten &amp; storingen op assets </li>
+</ul>
+</div>
+<div><h2 id="twee-typen-aanlevering">Twee typen aanlevering</h2>
+</div>
+<div><ol>
+<li>Als <em>afgeleide</em> op onze tijdgerelateerde data (bijv. alarmen). </li>
+<li>Als melding en of <em>handmatig</em> aangebracht.</li>
+</ol>
+</div>
+<div><p><em><a href="https://demo.lizard.net/favourites/270fe2b1-04a6-425a-9bf2-a4286cd6e4e9">voorbeeld</a></em></p>
+</div>
+<div><h2 id="-problemen-"><em>Problemen.</em></h2>
+</div>
+<div><p><em>Joep:</em></p>
+<blockquote>
+<p>Factor 10 meer events.</p>
+</blockquote>
+<p><em>Lex:</em></p>
+<blockquote>
+<p>Potentieel miljoenen.</p>
+</blockquote>
+</div>
+<div><p><em>Roel:</em></p>
+<ul>
+<li>Logica in de client ipv backend. </li>
+<li>Performance bij &gt; 5000 events.</li>
+</ul>
+</div>
+<div><h1 id="performance-">Performance?</h1>
+</div>
+<div><p>Geindexeerde queries nodig op:</p>
+<ol>
+<li>een tijdsaanduiding: start en een eind.</li>
+<li>een 2D punt geometerie dus een x en y</li>
+</ol>
+</div>
+<div><h1 id="-voorgestelde-oplossing-"><em>Voorgestelde oplossing</em></h1>
+<p><img src="http://i.imgur.com/iLMp4MV.gif" alt="4D"></p>
+</div>
+<div><h1 id="aggregaties">aggregaties</h1>
+</div>
+<div><ul>
+<li>Events hebben 3 dimensies: x, y en tijd, en vormen een lijn in de tijdsdimensie (de duur)</li>
+<li>Events worden altijd opgevraagd binnen de context van een Eventseries.</li>
+</ul>
+</div>
+<div><ul>
+<li>ruimtelijk afhankelijk van het zoomniveau hierarchisch clusteren</li>
+<li>in de tijd is aggregatie relevant op afgeronde tijdsstappen: 5 minuten, uur, dag, week?, maand, jaar</li>
+</ul>
+</div>
+<div><h1 id="enter-materialized-views-">Enter <em>Materialized views</em></h1>
+<blockquote>
+<p>&quot;A materialized view is a snapshot of a query saved into a table.&quot;</p>
+</blockquote>
+</div>
+<div><p>Werkt niet out of the box:</p>
+<ul>
+<li>Alleen snapshot, refresht niet uit zichzelf.</li>
+</ul>
+</div>
+<div><p>? oplossing ? :</p>
+<pre><code>REFRESH MATERIALIZED VIEW CONCURRENTLY
+</code></pre></div>
+<div><p>Nope.</p>
+</div>
+<div><ul>
+<li>Eager rows updaten?</li>
+<li>Lazy rows updaten?
+Zie <a href="https://hashrocket.com/blog/posts/materialized-view-strategies-using-postgresql">deze blogpost</a></li>
+</ul>
+</div>
+<div><pre><code class="lang-SQL">create function lazy.refresh_account_balance(_name varchar)
+  returns lazy.account_balances_mat
+  security definer
+  language sql
+as $$
+  with t as (
+    select
+      coalesce(
+        sum(amount) filter (where post_time &lt;= current_timestamp),
+        0
+      ) as balance,
+      coalesce(
+        min(post_time) filter (where current_timestamp &lt; post_time),
+        &#39;Infinity&#39;
+      ) as expiration_time
+    from transactions
+    where name=_name
+  )
+  update lazy.account_balances_mat
+  set balance = t.balance,
+    expiration_time = t.expiration_time
+  from t
+  where name=_name
+  returning account_balances_mat.*;
+$$;
+</code></pre>
+</div>
+<div><h1 id="queries">queries</h1>
+</div>
+<div><ul>
+<li><em>Postgis 3 (of 4D)</em> waarbij 1 wordt ingenomen door de tijd</li>
+<li><em>R-Tree</em> index</li>
+</ul>
+</div>
+<div><p><img src="https://upload.wikimedia.org/wikipedia/commons/5/57/RTree-Visualization-3D.svg" alt="RTree 3D"></p>
+</div>
+<div><p><img src="https://upload.wikimedia.org/wikipedia/commons/6/6f/R-tree.svg" alt="RTree 2D"></p>
+</div>
+<div><h1 id="alternatieve-query">alternatieve query</h1>
+</div>
+<div><p><em>Postgis gecombineerd met een 2 tijdsindexen (start en eind)</em></p>
+<ul>
+<li>als R-Tree niet zo goed werkt</li>
+<li>invloed temporele dimensie (te groot of te klein)</li>
+</ul>
+</div>
+<div><h1 id="-ja-maar-"><em>Ja maar...</em></h1>
+</div>
+<div><ul>
+<li>Geen out-of-the-box oplossing voor materialized views die eager of lazy partial updaten.</li>
+<li>Moet Postgresql functies schrijven.</li>
+<li>niet eindeloos schaalbaar (geen big data).</li>
+</ul>
+</div>
+<div><h1 id="-vragen-lex-"><em>vragen Lex</em></h1>
+</div>
+<div><ul>
+<li>koppeling met assets?</li>
+<li>assets vs geometrie = dat werkbaar in één?</li>
+<li>Moeten we timeseries- en rasteralarms gaan opslaan als events?</li>
+<li>Annotations al event?</li>
+<li>KPI-dashboard: Welke aggregatie hebben we nodig om PI&#39;s performant te maken?</li>
+<li>Attribuut category relevant of niet?</li>
+</ul>
+</div>
+<div><p>-
+<img src="http://cobra.canvas.be/polopoly_fs/1.878568!image/887936073.jpg_gen/derivatives/landscape670/887936073.jpg" alt="Einde">
+-</p>
+</div>
+</body>
+</html>
